@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mini Battle Royale 50P</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; background: #0f172a; color: #f8fafc; overflow: hidden; height: 100vh; }
+
+        /* LOBBY */
+        #lobby {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; padding: 20px; gap: 15px;
+        }
+        .card {
+            background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+            padding: 20px; width: 100%; max-width: 460px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+        }
+        h1 { margin: 0 0 5px 0; font-size: 24px; color: #38bdf8; text-align: center; }
+        .ip-badge {
+            background: #0f172a; padding: 6px 12px; border-radius: 6px; font-size: 13px;
+            color: #94a3b8; text-align: center; margin-bottom: 15px; border: 1px dashed #475569;
+        }
+        input {
+            width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569;
+            background: #0f172a; color: white; font-size: 15px; margin-bottom: 12px;
+        }
+        .room-item {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 8px;
+            border: 1px solid #334155;
+        }
+        .room-item button, .btn-primary {
+            background: #2563eb; color: white; border: none; padding: 8px 16px;
+            border-radius: 6px; font-weight: bold; cursor: pointer;
+        }
+        .room-item button:hover, .btn-primary:hover { background: #1d4ed8; }
+        .ip-row { display: flex; gap: 8px; }
+        .ip-row input { margin-bottom: 0; }
+
+        /* TELA DO JOGO */
+        #game-screen { display: none; position: relative; width: 100vw; height: 100vh; }
+        canvas { display: block; width: 100%; height: 100%; background: #1e293b; touch-action: none; }
+
+        #hud-top {
+            position: absolute; top: 15px; left: 15px; right: 15px;
+            display: flex; justify-content: space-between; pointer-events: none;
+        }
+        .hud-box {
+            background: rgba(15, 23, 42, 0.85); padding: 8px 14px; border-radius: 8px;
+            border: 1px solid #334155; font-weight: bold; font-size: 14px;
+        }
+        #btn-leave { pointer-events: auto; background: #dc2626; border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+
+        /* CONTROLES MOBILE */
+        #mobile-controls {
+            position: absolute; bottom: 20px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between; pointer-events: none;
+        }
+        .dpad {
+            display: grid; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px);
+            gap: 5px; pointer-events: auto; opacity: 0.75;
+        }
+        .m-btn {
+            background: #334155; border: 2px solid #64748b; border-radius: 10px;
+            color: white; font-size: 18px; display: flex; align-items: center; justify-content: center;
+        }
+        .m-btn:active { background: #94a3b8; }
+        #btn-up { grid-column: 2; grid-row: 1; }
+        #btn-left { grid-column: 1; grid-row: 2; }
+        #btn-down { grid-column: 2; grid-row: 2; }
+        #btn-right { grid-column: 3; grid-row: 2; }
+        #btn-shoot {
+            width: 85px; height: 85px; border-radius: 50%; background: rgba(220, 38, 38, 0.8);
+            border: 3px solid #f87171; pointer-events: auto; align-self: center; font-weight: bold;
+        }
+
+        /* OVERLAY DE FIM / ELIMINADO */
+        #end-overlay {
+            position: absolute; inset: 0; background: rgba(15, 23, 42, 0.85);
+            display: none; flex-direction: column; align-items: center; justify-content: center; gap: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- LOBBY -->
+    <div id="lobby">
+        <div class="card">
+            <h1>BATTLE ROYALE 2D</h1>
+            <div class="ip-badge" id="my-ip-display">Seu IP na rede: carregando...</div>
+
+            <label style="font-size: 13px; color: #cbd5e1;">Seu Apelido:</label>
+            <input type="text" id="nickname" placeholder="Ex: Berna" maxlength="14">
+
+            <label style="font-size: 13px; color: #cbd5e1;">Salas Disponíveis (Máx. 50):</label>
+            <div id="rooms-list" style="margin-top: 6px; margin-bottom: 15px;"></div>
+
+            <label style="font-size: 13px; color: #cbd5e1;">Ou conectar em outro IP:</label>
+            <div class="ip-row" style="margin-top: 6px;">
+                <input type="text" id="custom-ip" placeholder="Ex: 192.168.1.15:3000">
+                <button class="btn-primary" onclick="connectCustomIP()">Conectar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JOGO -->
+    <div id="game-screen">
+        <canvas id="canvas"></canvas>
+
+        <div id="hud-top">
+            <div class="hud-box">
+                <span id="hud-room">Sala</span> | Vivos: <span id="hud-alive" style="color:#4ade80">0</span>/<span id="hud-total">0</span>
+            </div>
+            <div class="hud-box">
+                Vida: <span id="hud-hp" style="color:#f87171">♥♥♥</span> | Abates: <span id="hud-kills">0</span>
+            </div>
+            <button id="btn-leave" onclick="leaveRoom()">Sair</button>
+        </div>
+
+        <div id="mobile-controls">
+            <div class="dpad">
+                <div class="m-btn" id="btn-up">▲</div>
+                <div class="m-btn" id="btn-left">◀</div>
+                <div class="m-btn" id="btn-down">▼</div>
+                <div class="m-btn" id="btn-right">▶</div>
+            </div>
+            <div class="m-btn" id="btn-shoot">ATIRAR</div>
+        </div>
+
+        <div id="end-overlay">
+            <h1 id="end-title" style="font-size: 32px;">FIM DE JOGO</h1>
+            <p id="end-subtitle" style="color: #cbd5e1;"></p>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-primary" onclick="socket.emit('restart_room')">Jogar Novamente</button>
+                <button class="btn-primary" style="background:#475569" onclick="leaveRoom()">Voltar ao Lobby</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket = io();
+        let myId = null;
+        let mapSize = 2400;
+        let state = { players: {}, bullets: [], zoneRadius: 1800, status: 'waiting' };
+        let keys = { w: false, a: false, s: false, d: false };
+        let mouseAngle = 0;
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function setupSocketEvents(sock) {
+            sock.on('lobby_info', (data) => {
+                document.getElementById('my-ip-display').innerText = `Seu IP para amigos entrarem: ${data.serverIP}`;
+                renderRooms(data.rooms);
+            });
+
+            sock.on('rooms_update', (rooms) => renderRooms(rooms));
+
+            sock.on('error_msg', (msg) => alert(msg));
+
+            sock.on('joined', (data) => {
+                myId = data.playerId;
+                mapSize = data.mapSize;
+                document.getElementById('hud-room').innerText = data.roomName;
+                document.getElementById('lobby').style.display = 'none';
+                document.getElementById('game-screen').style.display = 'block';
+                document.getElementById('end-overlay').style.display = 'none';
+            });
+
+            sock.on('state', (newState) => {
+                state = newState;
+                document.getElementById('hud-alive').innerText = state.aliveCount;
+                document.getElementById('hud-total').innerText = state.totalCount;
+
+                const me = state.players[myId];
+                if (me) {
+                    document.getElementById('hud-hp').innerText = me.alive ? '♥'.repeat(me.hp) : 'ELIMINADO';
+                    document.getElementById('hud-kills').innerText = me.kills;
+
+                    if (state.status === 'finished') {
+                        document.getElementById('end-title').innerText = `🏆 Vencedor: ${state.winner}`;
+                        document.getElementById('end-subtitle').innerText = `Seus abates: ${me.kills}`;
+                        document.getElementById('end-overlay').style.display = 'flex';
+                    } else if (!me.alive) {
+                        document.getElementById('end-title').innerText = '💀 Você foi eliminado!';
+                        document.getElementById('end-subtitle').innerText = 'Aguarde a partida acabar ou volte ao lobby.';
+                        document.getElementById('end-overlay').style.display = 'flex';
+                    } else {
+                        document.getElementById('end-overlay').style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        setupSocketEvents(socket);
+
+        function renderRooms(rooms) {
+            const list = document.getElementById('rooms-list');
+            list.innerHTML = '';
+            rooms.forEach(r => {
+                const div = document.createElement('div');
+                div.className = 'room-item';
+                div.innerHTML = `
+                    <div>
+                        <strong>${r.name}</strong><br>
+                        <small style="color:#94a3b8">${r.count}/${r.max} jogadores • ${r.status === 'playing' ? 'Em andamento' : 'Aguardando'}</small>
+                    </div>
+                    <button onclick="joinRoom('${r.id}')">Entrar</button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function joinRoom(roomId) {
+            const nickname = document.getElementById('nickname').value.trim() || 'Jogador';
+            socket.emit('join_room', { roomId, nickname });
+        }
+
+        function connectCustomIP() {
+            let ip = document.getElementById('custom-ip').value.trim();
+            if (!ip) return alert('Digite um IP válido!');
+            if (!ip.startsWith('http')) ip = 'http://' + ip;
+            socket.disconnect();
+            socket = io(ip);
+            setupSocketEvents(socket);
+        }
+
+        function leaveRoom() {
+            socket.emit('leave_room');
+            document.getElementById('game-screen').style.display = 'none';
+            document.getElementById('lobby').style.display = 'flex';
+            socket.emit('get_rooms');
+        }
+
+        // Controles PC
+        window.addEventListener('keydown', e => {
+            const k = e.key.toLowerCase();
+            if (k in keys) keys[k] = true;
+            if (k === ' ') socket.emit('shoot');
+        });
+        window.addEventListener('keyup', e => {
+            const k = e.key.toLowerCase();
+            if (k in keys) keys[k] = false;
+        });
+        canvas.addEventListener('mousemove', e => {
+            mouseAngle = Math.atan2(e.clientY - canvas.height / 2, e.clientX - canvas.width / 2);
+        });
+        canvas.addEventListener('mousedown', () => socket.emit('shoot'));
+
+        // Controles Mobile
+        const bindTouch = (id, key) => {
+            const el = document.getElementById(id);
+            el.addEventListener('touchstart', e => { e.preventDefault(); keys[key] = true; });
+            el.addEventListener('touchend', e => { e.preventDefault(); keys[key] = false; });
+        };
+        bindTouch('btn-up', 'w');
+        bindTouch('btn-down', 's');
+        bindTouch('btn-left', 'a');
+        bindTouch('btn-right', 'd');
+        document.getElementById('btn-shoot').addEventListener('touchstart', e => { e.preventDefault(); socket.emit('shoot'); });
+
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const t = e.touches[0];
+            mouseAngle = Math.atan2(t.clientY - canvas.height / 2, t.clientX - canvas.width / 2);
+            socket.emit('shoot');
+        });
+
+        setInterval(() => {
+            let dx = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+            let dy = (keys.s ? 1 : 0) - (keys.w ? 1 : 0);
+            if (dx !== 0 || dy !== 0) {
+                socket.emit('move', { dx, dy, angle: mouseAngle });
+            } else {
+                socket.emit('move', { dx: 0, dy: 0, angle: mouseAngle });
+            }
+        }, 1000 / 30);
+
+        // Renderização com Câmera
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const me = state.players[myId];
+            if (!me) return requestAnimationFrame(render);
+
+            const camX = me.x - canvas.width / 2;
+            const camY = me.y - canvas.height / 2;
+
+            ctx.save();
+            ctx.translate(-camX, -camY);
+
+            // Grade do chão para dar noção de movimento
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= mapSize; x += 100) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, mapSize); ctx.stroke();
+            }
+            for (let y = 0; y <= mapSize; y += 100) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(mapSize, y); ctx.stroke();
+            }
+
+            // Borda do Mapa
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 6;
+            ctx.strokeRect(0, 0, mapSize, mapSize);
+
+            // Zona Segura (Círculo do Gás)
+            ctx.beginPath();
+            ctx.arc(mapSize / 2, mapSize / 2, state.zoneRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 5;
+            ctx.stroke();
+
+            // Tiros
+            for (let b of state.bullets) {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = '#facc15';
+                ctx.fill();
+            }
+
+            // Jogadores
+            for (let id in state.players) {
+                const p = state.players[id];
+                if (!p.alive) continue;
+
+                ctx.save();
+                ctx.translate(p.x, p.y);
+
+                // Nome e Vida em cima do boneco
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${p.name} (${p.hp})`, 0, -26);
+
+                ctx.rotate(p.angle);
+                // Arma
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillRect(0, -4, 28, 8);
+
+                // Boneco
+                ctx.beginPath();
+                ctx.arc(0, 0, 18, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            ctx.restore();
+
+            // Minimapa no canto inferior direito (acima dos controles)
+            const miniSize = 110;
+            const miniX = canvas.width - miniSize - 15;
+            const miniY = 65;
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+            ctx.fillRect(miniX, miniY, miniSize, miniSize);
+            ctx.strokeStyle = '#475569';
+            ctx.strokeRect(miniX, miniY, miniSize, miniSize);
+
+            // Zona no minimapa
+            ctx.beginPath();
+            ctx.arc(miniX + miniSize / 2, miniY + miniSize / 2, (state.zoneRadius / mapSize) * miniSize, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Pontos dos jogadores no minimapa
+            for (let id in state.players) {
+                const p = state.players[id];
+                if (!p.alive) continue;
+                ctx.fillStyle = id === myId ? '#4ade80' : '#ef4444';
+                ctx.fillRect(miniX + (p.x / mapSize) * miniSize - 2, miniY + (p.y / mapSize) * miniSize - 2, 4, 4);
+            }
+
+            requestAnimationFrame(render);
+        }
+        render();
+    </script>
+</body>
+</html>
